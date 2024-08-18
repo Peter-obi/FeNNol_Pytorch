@@ -12,6 +12,20 @@ from ..utils.deconvolution import (
 )
 
 def linear_onecycle_schedule(peak_value, div_factor, final_div_factor, total_steps, pct_start, pct_final):
+    """
+    Implements a linear one-cycle learning rate schedule.
+
+    Args:
+        peak_value (float): Maximum value of the schedule.
+        div_factor (float): Initial value divisor.
+        final_div_factor (float): Final value divisor.
+        total_steps (int): Total number of steps in the schedule.
+        pct_start (float): Percentage of total steps for the warmup phase.
+        pct_final (float): Percentage of total steps before the cooldown phase.
+
+    Returns:
+        function: A function that takes a step number and returns the scheduled value.
+    """
     def schedule(step):
         if step < pct_start * total_steps:
             return peak_value / div_factor + (peak_value - peak_value / div_factor) * (step / (pct_start * total_steps))
@@ -22,6 +36,19 @@ def linear_onecycle_schedule(peak_value, div_factor, final_div_factor, total_ste
     return schedule
 
 def cosine_onecycle_schedule(peak_value, div_factor, final_div_factor, total_steps, pct_start):
+    """
+    Implements a cosine one-cycle learning rate schedule.
+
+    Args:
+        peak_value (float): Maximum value of the schedule.
+        div_factor (float): Initial value divisor.
+        final_div_factor (float): Final value divisor.
+        total_steps (int): Total number of steps in the schedule.
+        pct_start (float): Percentage of total steps for the warmup phase.
+
+    Returns:
+        function: A function that takes a step number and returns the scheduled value.
+    """
     initial_value = peak_value / div_factor
     final_value = peak_value / final_div_factor
     
@@ -36,6 +63,19 @@ def cosine_onecycle_schedule(peak_value, div_factor, final_div_factor, total_ste
     return schedule
 
 def get_thermostat(simulation_parameters, dt, system_data, fprec, generator):
+    """
+    Creates and returns a thermostat function based on the specified parameters.
+
+    Args:
+        simulation_parameters (dict): Dictionary containing simulation parameters.
+        dt (float): Time step for the simulation.
+        system_data (dict): Dictionary containing system data (mass, species, etc.).
+        fprec (torch.dtype): Floating-point precision for calculations.
+        generator (torch.Generator): Random number generator for reproducibility.
+
+    Returns:
+        tuple: (thermostat_function, postprocess_function, initial_state, initial_velocities, thermostat_name)
+    """
     state = {}
     postprocess = None
 
@@ -291,6 +331,24 @@ def initialize_qtb(
     adaptive,
     compute_thermostat_energy=False,
 ):
+    """
+    Initializes the Quantum Thermal Bath (QTB) thermostat.
+
+    Args:
+        qtb_parameters (dict): Dictionary containing QTB-specific parameters.
+        fprec (torch.dtype): Floating-point precision for calculations.
+        dt (float): Time step for the simulation.
+        mass (torch.Tensor): Masses of the particles.
+        gamma (float): Friction coefficient.
+        kT (float): Thermal energy (Boltzmann constant * Temperature).
+        species (torch.Tensor): Species identifiers for each particle.
+        generator (torch.Generator): Random number generator for reproducibility.
+        adaptive (bool): Whether to use adaptive QTB.
+        compute_thermostat_energy (bool): Whether to compute and track thermostat energy.
+
+    Returns:
+        tuple: (thermostat_function, postprocess_function, initial_state)
+    """
     state = {}
     post_state = {}
     verbose = qtb_parameters.get("verbose", False)
@@ -475,6 +533,16 @@ def initialize_qtb(
                 }
 
     def compute_corr_pot(niter=20, verbose=False):
+        """
+        Computes the potential energy correction factor for QTB.
+
+        Args:
+            niter (int): Number of iterations for deconvolution.
+            verbose (bool): Whether to print verbose output.
+
+        Returns:
+            torch.Tensor: Potential energy correction factor.
+        """
         if classical_kernel or hbar == 0:
             return torch.ones(nom)
 
@@ -499,6 +567,17 @@ def initialize_qtb(
         return torch.as_tensor(corr_pot, dtype=fprec)
 
     def compute_corr_kin(post_state, niter=7, verbose=False):
+        """
+        Computes the kinetic energy correction factor for QTB.
+
+        Args:
+            post_state (dict): Current state of the QTB.
+            niter (int): Number of iterations for deconvolution.
+            verbose (bool): Whether to print verbose output.
+
+        Returns:
+            tuple: (kinetic_energy_correction, updated_post_state)
+        """
         if not post_state["do_corr_kin"]:
             return post_state["corr_kin_prev"], post_state
         if classical_kernel or hbar == 0:
@@ -550,6 +629,15 @@ def initialize_qtb(
         }
 
     def ff_kernel(post_state):
+        """
+        Computes the force-force correlation kernel for QTB.
+
+        Args:
+            post_state (dict): Current state of the QTB.
+
+        Returns:
+            torch.Tensor: Force-force correlation kernel.
+        """
         if classical_kernel:
             kernel = cutoff * (2 * gamma * kT / dt)
         else:
@@ -566,6 +654,15 @@ def initialize_qtb(
         return kernel.unsqueeze(1) * gamma_ratio * mass_idx
 
     def refresh_force(post_state):
+        """
+        Refreshes the random forces for QTB.
+
+        Args:
+            post_state (dict): Current state of the QTB.
+
+        Returns:
+            tuple: (new_forces, updated_post_state)
+        """
         white_noise = torch.cat(
             (
                 post_state["white_noise"][nseg:],
@@ -581,6 +678,17 @@ def initialize_qtb(
         return force, {**post_state, "generator": post_state["generator"], "white_noise": white_noise}
 
     def compute_spectra(force, vel, post_state):
+        """
+        Computes various spectra for QTB analysis.
+
+        Args:
+            force (torch.Tensor): Current forces.
+            vel (torch.Tensor): Current velocities.
+            post_state (dict): Current state of the QTB.
+
+        Returns:
+            dict: Updated post_state with computed spectra.
+        """
         sf = torch.fft.rfft(force / gamma, 3 * nseg, dim=0, norm="ortho")
         sv = torch.fft.rfft(vel, 3 * nseg, dim=0, norm="ortho")
         Cvv = torch.sum(torch.abs(sv[:nom]) ** 2, dim=-1).t()
@@ -625,6 +733,12 @@ def initialize_qtb(
         }
 
     def write_spectra_to_file(post_state):
+        """
+        Writes QTB spectra to output files.
+
+        Args:
+            post_state (dict): Current state of the QTB.
+        """
         mCvv_avg = post_state["mCvv_avg"].cpu().numpy()
         Cvfg_avg = post_state["Cvfg_avg"].cpu().numpy()
         Cff_avg = post_state["Cff_avg"].cpu().numpy() * 3.0 / dt / (gamma**2)
@@ -657,6 +771,16 @@ def initialize_qtb(
         state["qtb_energy_flux"] = torch.tensor(0.0, dtype=fprec)
 
     def thermostat(vel, state):
+        """
+        Applies the QTB thermostat to the velocities.
+
+        Args:
+            vel (torch.Tensor): Current velocities.
+            state (dict): Current state of the simulation.
+
+        Returns:
+            tuple: (new_velocities, updated_state)
+        """
         istep = state["istep"]
         dvel = dt * state["force"][istep] / mass.unsqueeze(1)
         new_vel = vel * a1 + dvel
@@ -676,6 +800,16 @@ def initialize_qtb(
         return new_vel, new_state
 
     def postprocess_work(state, post_state):
+        """
+        Performs post-processing work for QTB.
+
+        Args:
+            state (dict): Current state of the simulation.
+            post_state (dict): Current state of the QTB.
+
+        Returns:
+            tuple: (updated_state, updated_post_state)
+        """
         if do_compute_spectra:
             post_state = compute_spectra(state["force"], state["vel"], post_state)
         if adaptive:
@@ -684,6 +818,16 @@ def initialize_qtb(
         return {**state, "force": new_force}, post_state
 
     def postprocess(state, post_state):
+        """
+        Main post-processing function for QTB.
+
+        Args:
+            state (dict): Current state of the simulation.
+            post_state (dict): Current state of the QTB.
+
+        Returns:
+            tuple: (updated_state, updated_post_state)
+        """
         counter.increment()
         if not counter.is_reset_step:
             return state, post_state
