@@ -9,7 +9,25 @@ from typing import Sequence, Union, Optional
 from ase.stress import full_3x3_to_voigt_6_stress
 
 class FENNIXCalculator(ase.calculators.calculator.Calculator):
-    """FENNIX calculator for ASE."""
+    """
+    ASE calculator implementation for FENNIX machine learning potential.
+
+    This calculator interfaces the FENNIX model with ASE, allowing for
+    energy, force, and stress calculations within the ASE framework.
+
+    Attributes:
+        implemented_properties (list): List of properties that this calculator can compute.
+
+    Args:
+        model (Union[str, FENNIX]): Either a path to a FENNIX model file or a FENNIX instance.
+        gpu_preprocessing (bool): Whether to use GPU for preprocessing. Default is False.
+        atoms (Optional[ase.Atoms]): Initial atomic configuration. Default is None.
+        verbose (bool): Whether to print verbose output. Default is False.
+        energy_terms (Optional[Sequence[str]]): Specific energy terms to compute. Default is None.
+        use_float64 (bool): Whether to use double precision. Default is False.
+        **kwargs: Additional keyword arguments to pass to FENNIX.load() if model is a string.
+    """
+
 
     implemented_properties = ["energy", "forces", "stress"]
 
@@ -50,6 +68,20 @@ class FENNIXCalculator(ase.calculators.calculator.Calculator):
         properties=["energy"],
         system_changes=ase.calculators.calculator.all_changes,
     ):
+        """
+        Perform the calculation of properties for the given atomic configuration.
+
+        This method is called by ASE to compute the requested properties. It handles
+        energy, forces, and stress calculations based on the input properties.
+
+        Args:
+            atoms (ase.Atoms): Atomic configuration. If None, uses the stored configuration.
+            properties (list): List of properties to calculate. Default is ["energy"].
+            system_changes (list): List of changes since last calculation. Default is all changes.
+
+        Note:
+            The results are stored in self.results dictionary, following ASE conventions.
+        """
         super().calculate(atoms, properties, system_changes)
         inputs = self.preprocess(self.atoms, system_changes=system_changes)
 
@@ -70,6 +102,23 @@ class FENNIXCalculator(ase.calculators.calculator.Calculator):
         self.results["energy"] = float(e[0]) * ase.units.Hartree
 
     def preprocess(self, atoms, system_changes=ase.calculators.calculator.all_changes):
+        """
+        Preprocess the atomic configuration for FENNIX calculations.
+
+        This method converts ASE Atoms object into the input format required by FENNIX.
+        It handles periodic boundary conditions and updates only the necessary parts
+        of the input based on the system changes.
+
+        Args:
+            atoms (ase.Atoms): Atomic configuration to preprocess.
+            system_changes (list): List of changes since last calculation. Default is all changes.
+
+        Returns:
+            dict: Preprocessed inputs for FENNIX calculations.
+
+        Note:
+            This method updates the internal _fennol_inputs attribute.
+        """
         force_cpu_preprocessing = False
         if self._fennol_inputs is None:
             force_cpu_preprocessing = True
