@@ -27,17 +27,50 @@ from .integrate import initialize_dynamics
 from copy import deepcopy
 
 def minmaxone(x, name=""):
+    """
+    Calculate and print the minimum, maximum, and root mean square of a tensor.
+
+    Args:
+        x (torch.Tensor): The input tensor.
+        name (str, optional): A name to identify the tensor in the output. Defaults to "".
+
+    Prints the min, max, and RMS values of the tensor.
+    """
     if x.numel() == 0:
         print(f"{name} is empty")
         return
     print(name, x.min().item(), x.max().item(), torch.sqrt(torch.mean(x**2)).item())
 
 def wrapbox(x, cell, reciprocal_cell):
+    """
+    Wrap atomic coordinates into the primary simulation box.
+
+    This function is used in periodic boundary conditions to ensure all
+    atoms are within the primary simulation cell.
+
+    Args:
+        x (torch.Tensor): Atomic coordinates.
+        cell (torch.Tensor): The simulation cell matrix.
+        reciprocal_cell (torch.Tensor): The reciprocal of the simulation cell matrix.
+
+    Returns:
+        torch.Tensor: The wrapped coordinates.
+    """
     q = torch.matmul(x, reciprocal_cell.t())
     q = q - torch.floor(q)
     return torch.matmul(q, cell)
 
 def main():
+    """
+    This function parses command-line arguments, reads the simulation parameters
+    from a file, sets up the simulation environment (including device and precision),
+    and calls the dynamic() function to run the simulation.
+
+    Command-line usage:
+    python dynamic.py path/to/parameter_file.txt
+
+    The parameter file should contain all necessary settings for the simulation.
+    """
     sys.stdout = io.TextIOWrapper(
         open(sys.stdout.fileno(), "wb", 0), write_through=True
     )
@@ -62,6 +95,20 @@ def main():
     dynamic(simulation_parameters, device, fprec)
 
 def dynamic(simulation_parameters, device, fprec):
+    """
+    Run a molecular dynamics simulation based on the provided parameters.
+
+    This function sets up the simulation system, initializes the dynamics,
+    and runs the main simulation loop. It handles output writing, periodic
+    calculations, and summary reporting.
+
+    Args:
+        simulation_parameters (dict): A dictionary containing all simulation settings.
+        device (str): The device to run the simulation on ('cpu' or 'cuda').
+        fprec (torch.dtype): The floating-point precision to use (torch.float32 or torch.float64).
+
+    The function doesn't return anything but writes output to files and the console.
+    """
     tstart_dyn = time.time()
     t0 = time.time()
     t1 = t0
@@ -156,6 +203,15 @@ def dynamic(simulation_parameters, device, fprec):
         )
 
     def check_nan(system):
+        """
+    Check if the system contains any NaN values in velocities or coordinates.
+
+    Args:
+        system (dict): A dictionary containing the system state, including 'vel' and 'coordinates'.
+
+    Returns:
+        bool: True if NaN values are found, False otherwise.
+    """
         return torch.isnan(system["vel"]).any() or torch.isnan(system["coordinates"]).any()
 
     if system_data["pbc"] is not None:
