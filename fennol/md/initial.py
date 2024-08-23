@@ -22,6 +22,22 @@ from .thermostats import get_thermostat
 from copy import deepcopy
 
 def load_model(simulation_parameters):
+     """
+    Load a FENNIX model from a file specified in the simulation parameters.
+
+    This function reads the model file path from the simulation parameters,
+    loads the FENNIX model, and optionally updates its energy terms.
+
+    Args:
+        simulation_parameters (Dict[str, Any]): A dictionary containing simulation
+            parameters, including:
+            - 'model_file': Path to the FENNIX model file.
+            - 'graph_config' (optional): Configuration for the graph structure.
+            - 'energy_terms' (optional): Energy terms to be used in the model.
+
+    Returns:
+        FENNIX: The loaded FENNIX model instance.
+    """
     model_file = simulation_parameters.get("model_file")
     model_file = Path(str(model_file).strip())
     if not model_file.exists():
@@ -37,6 +53,23 @@ def load_model(simulation_parameters):
     return model
 
 def load_system_data(simulation_parameters, fprec):
+    """
+    Load system data from an XYZ file and prepare it for simulation.
+
+    This function reads atomic coordinates and other system information from an XYZ file,
+    processes it according to the simulation parameters, and prepares the data for use
+    in FENNIX simulations.
+
+    Args:
+        simulation_parameters (Dict[str, Any]): A dictionary containing simulation
+            parameters, including XYZ file path, PBC settings, and other options.
+        fprec (torch.dtype): The floating-point precision to use for tensor operations.
+
+    Returns:
+        Tuple[Dict[str, Any], Dict[str, torch.Tensor]]: A tuple containing:
+            1. system_data: Dictionary with system information (e.g., atom count, mass, temperature).
+            2. conformation: Dictionary with structural data (e.g., coordinates, species).
+    """
     system_name = str(simulation_parameters.get("system", "system")).strip()
     indexed = simulation_parameters.get("xyz_input/indexed", True)
     box_info = simulation_parameters.get("xyz_input/box_info", False)
@@ -149,6 +182,23 @@ def load_system_data(simulation_parameters, fprec):
     return system_data, conformation
 
 def initialize_preprocessing(simulation_parameters, model, conformation, system_data):
+    """
+    Initialize preprocessing for the simulation based on the model and system configuration.
+
+    This function sets up the preprocessing state for the FENNIX model, configures
+    neighbor lists, and handles periodic boundary conditions if applicable.
+
+    Args:
+        simulation_parameters (Dict[str, Any]): Dictionary containing simulation parameters.
+        model (FENNIX): The FENNIX model instance to be used for simulation.
+        conformation (Dict[str, torch.Tensor]): The initial system conformation.
+        system_data (Dict[str, Any]): System-specific data.
+
+    Returns:
+        Tuple[Dict[str, Any], Dict[str, torch.Tensor]]: A tuple containing:
+            1. preproc_state: The updated preprocessing state.
+            2. conformation: The potentially modified system conformation.
+    """
     nblist_verbose = simulation_parameters.get("nblist_verbose", False)
     nblist_skin = simulation_parameters.get("nblist_skin", -1.0)
     pbc_data = system_data.get("pbc", None)
@@ -188,6 +238,27 @@ def initialize_preprocessing(simulation_parameters, model, conformation, system_
     return preproc_state, conformation
 
 def initialize_system(conformation, vel, model, system_data, fprec):
+    """
+    Initialize the system for simulation by computing initial energies and forces.
+
+    This function computes the initial potential energy, forces, and kinetic energy
+    of the system using the provided FENNIX model and initial configuration.
+
+    Args:
+        conformation (Dict[str, torch.Tensor]): The initial system conformation.
+        vel (torch.Tensor): Initial velocities of the particles.
+        model (FENNIX): The FENNIX model instance used for force and energy calculations.
+        system_data (Dict[str, Any]): System-specific data including masses and bead information.
+        fprec (torch.dtype): The floating-point precision to use for tensor operations.
+
+    Returns:
+        Dict[str, torch.Tensor]: A dictionary containing initialized system properties:
+            - 'ek': Kinetic energy
+            - 'epot': Potential energy
+            - 'vel': Velocities
+            - 'coordinates': Particle positions
+            - 'forces': Forces acting on particles
+    """
     print("# Computing initial energy and forces")
     e, f, _ = model._energy_and_forces(model.variables, conformation)
     f = f.cpu().numpy()
