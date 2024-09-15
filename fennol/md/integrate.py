@@ -21,6 +21,27 @@ from .initial import initialize_system
 def initialize_dynamics(
     simulation_parameters, system_data, conformation, model, fprec, generator
 ):
+    """
+    Initialize the molecular dynamics simulation.
+
+    This function sets up the initial state of the system, including the integrator,
+    thermostat, and system configuration.
+
+    Args:
+        simulation_parameters (dict): Parameters controlling the simulation.
+        system_data (dict): Data describing the molecular system.
+        conformation (dict): Initial atomic positions and related data.
+        model: The molecular model used for energy and force calculations.
+        fprec: Floating-point precision to be used.
+        generator: Random number generator for stochastic processes.
+
+    Returns:
+        tuple: Contains the following elements:
+            - step (function): The time step function for the dynamics.
+            - update_conformation (function): Function to update atomic positions.
+            - dyn_state (dict): The initial dynamic state of the system.
+            - system (dict): The initialized system state.
+    """
     step, update_conformation, dyn_state, thermostat_state, vel = initialize_integrator(
         simulation_parameters, system_data, model, fprec, generator
     )
@@ -35,6 +56,27 @@ def initialize_dynamics(
     return step, update_conformation, dyn_state, system
 
 def initialize_integrator(simulation_parameters, system_data, model, fprec, generator):
+    """
+    Initialize the integrator for molecular dynamics.
+
+    This function sets up the numerical integration scheme, thermostat, and related
+    parameters for the molecular dynamics simulation.
+
+    Args:
+        simulation_parameters (dict): Parameters controlling the simulation.
+        system_data (dict): Data describing the molecular system.
+        model: The molecular model used for energy and force calculations.
+        fprec: Floating-point precision to be used.
+        generator: Random number generator for stochastic processes.
+
+    Returns:
+        tuple: Contains the following elements:
+            - step (function): The time step function for the dynamics.
+            - update_conformation (function): Function to update atomic positions.
+            - dyn_state (dict): The initial dynamic state of the system.
+            - thermostat_state (dict): The initial state of the thermostat.
+            - vel (torch.Tensor): Initial velocities of the atoms.
+    """
     dt = simulation_parameters.get("dt") * au.FS
     dt2 = 0.5 * dt
     nbeads = system_data.get("nbeads", None)
@@ -128,6 +170,18 @@ def initialize_integrator(simulation_parameters, system_data, model, fprec, gene
         
         
         def stepA(system):
+            """
+            Perform the first half of the velocity Verlet integration step.
+
+            This function updates positions and partially updates velocities according to
+            the velocity Verlet algorithm. It also applies the thermostat.
+
+            Args:
+                system (dict): The current state of the system.
+
+            Returns:
+                dict: The updated system state after the first half-step.
+            """
             eigx = system["coordinates"]
             eigv = system["vel"] + dt2m * system["forces"]
             eigx, eigv = halfstep_free_polymer(eigx, eigv)
@@ -142,6 +196,19 @@ def initialize_integrator(simulation_parameters, system_data, model, fprec, gene
             }
         
         def update_forces(system, conformation):
+            """
+            Calculate and update the forces acting on the system.
+
+            This function computes the potential energy, forces, and (optionally) virial
+            using the provided model.
+
+            Args:
+                system (dict): The current state of the system.
+                conformation (dict): The current atomic positions and related data.
+
+            Returns:
+                dict: The updated system state including new forces and potential energy.
+            """
             if estimate_pressure:
                 epot, f, vir_t, _ = model._energy_and_forces_and_virial(
                     model.variables, conformation
@@ -157,6 +224,18 @@ def initialize_integrator(simulation_parameters, system_data, model, fprec, gene
                 return {**system, "forces": coords_to_eig(f), "epot": torch.mean(epot)}
         
         def stepB(system):
+            """
+            Perform the second half of the velocity Verlet integration step.
+
+            This function completes the velocity update and calculates the kinetic energy.
+            If required, it also estimates the pressure of the system.
+
+            Args:
+                system (dict): The current state of the system after stepA.
+
+            Returns:
+                dict: The fully updated system state after completing the integration step.
+            """
             eigv = system["vel"] + dt2m * system["forces"]
 
             ek_c = 0.5 * torch.sum(mass.unsqueeze(1) * eigv[0] ** 2)
@@ -231,6 +310,27 @@ def initialize_integrator(simulation_parameters, system_data, model, fprec, gene
     def step(
         istep, dyn_state, system, conformation, preproc_state, force_preprocess=False
     ):
+        """
+        Perform a complete time step of the molecular dynamics simulation.
+
+        This function advances the system by one time step, updating positions, velocities,
+        and forces. It also handles preprocessing steps such as neighbor list updates.
+
+        Args:
+            istep (int): The current step number.
+            dyn_state (dict): The current dynamic state of the system.
+            system (dict): The current system state.
+            conformation (dict): The current atomic positions and related data.
+            preproc_state: The current state of the preprocessing.
+            force_preprocess (bool, optional): Force preprocessing regardless of the neighbor list status.
+
+        Returns:
+            tuple: Contains the following elements:
+                - dyn_state (dict): The updated dynamic state.
+                - system (dict): The updated system state.
+                - conformation (dict): The updated conformation.
+                - preproc_state: The updated preprocessing state.
+        """
         tstep0 = time.time()
         print_timings = "timings" in dyn_state
 
